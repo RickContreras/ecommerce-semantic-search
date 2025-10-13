@@ -54,6 +54,93 @@ class ElasticsearchService:
                 "error": str(e)
             }
     
+    async def create_index_simple(self) -> bool:
+        """Crea el índice optimizado para búsqueda textual (sin embeddings)."""
+        mapping = {
+            "mappings": {
+                "properties": {
+                    "id": {"type": "keyword"},
+                    "name": {
+                        "type": "text",
+                        "analyzer": "spanish",
+                        "fields": {
+                            "keyword": {"type": "keyword"},
+                            "ngram": {
+                                "type": "text",
+                                "analyzer": "ngram_analyzer"
+                            }
+                        }
+                    },
+                    "description": {
+                        "type": "text",
+                        "analyzer": "spanish",
+                        "fields": {
+                            "ngram": {
+                                "type": "text",
+                                "analyzer": "ngram_analyzer"
+                            }
+                        }
+                    },
+                    "category": {"type": "keyword"},
+                    "price": {"type": "float"},
+                    "stock": {"type": "integer"},
+                    "image_url": {"type": "keyword"},
+                    "created_at": {"type": "date"},
+                    "updated_at": {"type": "date"}
+                }
+            },
+            "settings": {
+                "analysis": {
+                    "analyzer": {
+                        "spanish": {
+                            "tokenizer": "standard",
+                            "filter": ["lowercase", "spanish_stemmer", "asciifolding"]
+                        },
+                        "ngram_analyzer": {
+                            "tokenizer": "ngram_tokenizer",
+                            "filter": ["lowercase", "asciifolding"]
+                        }
+                    },
+                    "tokenizer": {
+                        "ngram_tokenizer": {
+                            "type": "ngram",
+                            "min_gram": 3,
+                            "max_gram": 4,
+                            "token_chars": ["letter", "digit"]
+                        }
+                    },
+                    "filter": {
+                        "spanish_stemmer": {
+                            "type": "stemmer",
+                            "language": "spanish"
+                        }
+                    }
+                }
+            }
+        }
+
+        try:
+            # Verificar si el índice ya existe
+            exists = await self.es_client.indices.exists(index=self.index_name)
+
+            if exists:
+                logger.info(f"Índice {self.index_name} ya existe")
+                return True
+
+            # Crear el índice
+            logger.info(f"Creando índice simple {self.index_name}")
+            await self.es_client.indices.create(
+                index=self.index_name,
+                body=mapping
+            )
+
+            logger.info(f"Índice simple {self.index_name} creado exitosamente")
+            return True
+
+        except Exception as e:
+            logger.error(f"Error creando índice simple: {str(e)}")
+            return False
+
     async def create_index(self) -> bool:
         """Crea el índice con el mapping correcto."""
         mapping = {
@@ -61,14 +148,14 @@ class ElasticsearchService:
                 "properties": {
                     "id": {"type": "keyword"},
                     "name": {
-                        "type": "text", 
+                        "type": "text",
                         "analyzer": "spanish",
                         "fields": {
                             "keyword": {"type": "keyword"}
                         }
                     },
                     "description": {
-                        "type": "text", 
+                        "type": "text",
                         "analyzer": "spanish"
                     },
                     "category": {"type": "keyword"},
@@ -223,14 +310,153 @@ class ElasticsearchService:
             logger.error(f"Error en indexación batch: {str(e)}")
             raise
     
+    async def search_products_simple(self, search_request: SearchRequest) -> Dict[str, Any]:
+        """Realiza búsqueda simple de productos usando solo búsqueda textual (sin embeddings)."""
+        start_time = datetime.now()
+
+        try:
+            # Construir query de Elasticsearch (solo búsqueda textual)
+            query = {
+                "bool": {
+                    "should": [
+                        # Búsqueda exacta en nombre (mayor peso)
+                        {
+                            "match_phrase": {
+                                "name": {
+                                    "query": search_request.query,
+                                    "boost": 3.0
+                                }
+                            }
+                        },
+                        # Búsqueda fuzzy en nombre
+                        {
+                            "match": {
+                                "name": {
+                                    "query": search_request.query,
+                                    "fuzziness": "AUTO",
+                                    "boost": 2.0
+                                }
+                            }
+                        },
+                        # Búsqueda en descripción
+                        {
+                            "match": {
+                                "description": {
+                                    "query": search_request.query,
+                                    "fuzziness": "AUTO",
+                                    "boost": 1.0
+                                }
+                            }
+                        },
+                        # Búsqueda con wildcards para coincidencias parciales
+                        {
+                            "wildcard": {
+                                "name": {
+                                    "value": f"*{search_request.query.lower()}*",
+                                    "boost": 1.5
+                                }
+                            }
+                        }
+                    ],
+                    "minimum_should_match": 1
+                }
+            }
+
+            # Aplicar filtros
+            filters = []
+
+            if search_request.category:
+                filters.append({"term": {"category": search_request.category}})
+
+            if search_request.price_min is not None:
+                filters.append({"range": {"price": {"gte": search_request.price_min}}})
+
+            if search_request.price_max is not None:
+                filters.append({"range": {"price": {"lte": search_request.price_max}}})
+
+            if not search_request.include_out_of_stock:
+                filters.append({"range": {"stock": {"gt": 0}}})
+
+            if filters:
+                query = {
+                    "bool": {
+                        "must": [query],
+                        "filter": filters
+                    }
+                }
+
+            # Ejecutar búsqueda
+            response = await self.es_client.search(
+                index=self.index_name,
+                body={
+                    "query": query,
+                    "size": search_request.top_k,
+                    "_source": {
+                        "excludes": ["embedding"]  # No devolver el vector embedding
+                    }
+                }
+            )
+
+            # Procesar resultados
+            results = []
+            for hit in response["hits"]["hits"]:
+                source = hit["_source"]
+                score = hit["_score"]
+
+                # Normalizar score
+                max_possible_score = response["hits"]["max_score"] or 1.0
+                normalized_score = min(score / max_possible_score, 1.0)
+
+                product_with_score = ProductWithScore(
+                    **source,
+                    score_semantico=normalized_score,
+                    relevancia=""  # Se calculará automáticamente en el validator
+                )
+                results.append(product_with_score)
+
+            # Calcular tiempo de búsqueda
+            search_time = int((datetime.now() - start_time).total_seconds() * 1000)
+
+            # Preparar información de filtros aplicados
+            filters_applied = SearchFilters(
+                category=search_request.category,
+                price_range={
+                    "min": search_request.price_min,
+                    "max": search_request.price_max
+                } if search_request.price_min is not None or search_request.price_max is not None else None,
+                in_stock_only=not search_request.include_out_of_stock
+            )
+
+            logger.info(
+                f"Búsqueda simple completada",
+                extra={
+                    "query": search_request.query,
+                    "results_count": len(results),
+                    "total_hits": response["hits"]["total"]["value"],
+                    "search_time_ms": search_time
+                }
+            )
+
+            return {
+                "query": search_request.query,
+                "total_resultados": response["hits"]["total"]["value"],
+                "tiempo_busqueda_ms": search_time,
+                "filtros_aplicados": filters_applied,
+                "resultados": results
+            }
+
+        except Exception as e:
+            logger.error(f"Error en búsqueda simple: {str(e)}")
+            raise
+
     async def search_products(self, search_request: SearchRequest) -> Dict[str, Any]:
         """Realiza búsqueda semántica de productos."""
         start_time = datetime.now()
-        
+
         try:
             # Generar embedding para la consulta
             query_embedding = await self.embedding_service.generate_embedding(search_request.query)
-            
+
             # Construir query de Elasticsearch (búsqueda híbrida)
             query = {
                 "bool": {

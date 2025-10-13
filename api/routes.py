@@ -117,9 +117,9 @@ async def search_products(search_request: SearchRequest):
     """Búsqueda semántica de productos."""
     try:
         logger.info(f"Búsqueda solicitada: '{search_request.query}'")
-        
+
         es_service = get_elasticsearch_service()
-        
+
         # Verificar que el índice existe
         es_health = await es_service.check_connection()
         if es_health["status"] != "up":
@@ -127,12 +127,12 @@ async def search_products(search_request: SearchRequest):
                 status_code=503,
                 detail="Servicio de búsqueda no disponible"
             )
-        
+
         # Realizar búsqueda
         results = await es_service.search_products(search_request)
-        
+
         return SearchResponse(**results)
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -140,6 +140,37 @@ async def search_products(search_request: SearchRequest):
         raise HTTPException(
             status_code=500,
             detail=f"Error interno en búsqueda: {str(e)}"
+        )
+
+
+@router.post("/buscar-simple", response_model=SearchResponse)
+async def search_products_simple(search_request: SearchRequest):
+    """Búsqueda simple de productos usando solo búsqueda textual (sin embeddings)."""
+    try:
+        logger.info(f"Búsqueda simple solicitada: '{search_request.query}'")
+
+        es_service = get_elasticsearch_service()
+
+        # Verificar que el índice existe
+        es_health = await es_service.check_connection()
+        if es_health["status"] != "up":
+            raise HTTPException(
+                status_code=503,
+                detail="Servicio de búsqueda no disponible"
+            )
+
+        # Realizar búsqueda simple
+        results = await es_service.search_products_simple(search_request)
+
+        return SearchResponse(**results)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error en búsqueda simple: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error interno en búsqueda simple: {str(e)}"
         )
 
 
