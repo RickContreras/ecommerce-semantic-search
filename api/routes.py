@@ -2,6 +2,8 @@
 import asyncio
 from datetime import datetime
 from typing import Dict, Any
+from utils.monitoring import log_search_prediction
+
 
 from fastapi import APIRouter, HTTPException, BackgroundTasks
 from fastapi.responses import JSONResponse
@@ -113,13 +115,21 @@ async def sync_products(
 
 
 @router.post("/buscar", response_model=SearchResponse)
-async def search_products(search_request: SearchRequest):
+async def search_products(
+    search_request: SearchRequest,
+    background_tasks: BackgroundTasks = None
+):
     """Búsqueda semántica de productos."""
+    start_time = datetime.now()
+    error = None
+    results = None
+    embedding = None
+
     try:
         logger.info(f"Búsqueda solicitada: '{search_request.query}'")
-        
+
         es_service = get_elasticsearch_service()
-        
+
         # Verificar que el índice existe
         es_health = await es_service.check_connection()
         if es_health["status"] != "up":
@@ -127,15 +137,44 @@ async def search_products(search_request: SearchRequest):
                 status_code=503,
                 detail="Servicio de búsqueda no disponible"
             )
-        
+
         # Realizar búsqueda
         results = await es_service.search_products(search_request)
-        
+
+        # TODO: Opcionalmente obtener embedding para monitoreo más detallado
+        # embedding_service = get_embedding_service()
+        # embedding = await embedding_service.generate_embedding(search_request.query)
+
+        # Log to monitoring BEFORE returning (blocking to ensure it executes)
+        try:
+            latency_ms = (datetime.now() - start_time).total_seconds() * 1000
+
+            # Extract results list from response dict
+            results_list = []
+            if results and isinstance(results, dict):
+                results_list = results.get("resultados", [])
+
+            await log_search_prediction(
+                query=search_request.query,
+                embedding=embedding,  # None if not calculated
+                results=results_list,
+                latency_ms=latency_ms,
+                category_filter=getattr(search_request, 'category', None),
+                price_min=getattr(search_request, 'price_min', None),
+                price_max=getattr(search_request, 'price_max', None),
+                error=error,
+            )
+        except Exception as log_error:
+            # Silent fail - monitoring should never break the main request
+            logger.warning(f"Failed to log to monitoring: {log_error}")
+
         return SearchResponse(**results)
-        
+
     except HTTPException:
+        error = "Service unavailable"
         raise
     except Exception as e:
+        error = str(e)
         logger.error(f"Error en búsqueda: {str(e)}")
         raise HTTPException(
             status_code=500,
