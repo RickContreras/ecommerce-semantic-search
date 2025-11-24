@@ -14,14 +14,14 @@ class Settings(BaseSettings):
     index_name: str = "productos"
     
     # External API
-    productos_api_url: str = "http://localhost:8001/api/v1/products"
+    productos_api_url: str = "http://localhost:8000/api/v1/products"
     
     # ML Model (renombrado para evitar conflicto)
     embedding_model_name: str = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
     
     # API Configuration
     api_v1_str: str = "/api/v1"
-    project_name: str = "E-commerce Semantic Search"
+    project_name: str = "E-commerce Traditional Search"
     version: str = "1.0.0"
     
     # Performance

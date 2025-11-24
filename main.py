@@ -52,7 +52,7 @@ app = FastAPI(
     openapi_url="/openapi.json",
     lifespan=lifespan,
     contact={
-        "name": "E-commerce Semantic Search API",
+        "name": "E-commerce Traditional Search API",
         "url": "https://github.com/RickContreras/ecommerce-semantic-search",
     },
     license_info={
@@ -96,7 +96,7 @@ async def api_info():
     """Información detallada de la API y endpoints disponibles."""
     return {
         "api": {
-            "title": "E-commerce Semantic Search",
+            "title": "E-commerce Traditional Search",
             "version": settings.version,
             "description": "Sistema de búsqueda semántica para productos de e-commerce"
         },
@@ -153,7 +153,7 @@ async def docs_simple():
     <!DOCTYPE html>
     <html>
     <head>
-        <title>E-commerce Semantic Search API</title>
+        <title>E-commerce Traditional Search API</title>
         <style>
             body { font-family: Arial, sans-serif; margin: 40px; line-height: 1.6; }
             .endpoint { background: #f5f5f5; padding: 15px; margin: 10px 0; border-radius: 5px; }
@@ -165,7 +165,7 @@ async def docs_simple():
         </style>
     </head>
     <body>
-        <h1>🔍 E-commerce Semantic Search API</h1>
+        <h1>🔍 E-commerce Traditional Search API</h1>
         <p>Sistema de búsqueda semántica para productos de e-commerce usando Elasticsearch y embeddings multilingües.</p>
         
         <h2>📚 Documentación</h2>
