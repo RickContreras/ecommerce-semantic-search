@@ -1,4 +1,4 @@
-"""Aplicación principal FastAPI para búsqueda semántica de e-commerce."""
+"""Aplicación principal FastAPI para búsqueda tradicional de e-commerce."""
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -9,6 +9,7 @@ from config import get_settings
 from api.routes import router
 from services.elasticsearch_service import get_elasticsearch_service
 from utils.logger import get_logger
+from monitoring.prometheus_middleware import PrometheusMiddleware, metrics_response
 
 settings = get_settings()
 logger = get_logger(__name__)
@@ -60,6 +61,9 @@ app = FastAPI(
     },
 )
 
+# Prometheus metrics middleware
+app.add_middleware(PrometheusMiddleware, service_name="traditional-search")
+
 # Configurar CORS - Permitir TODO desde cualquier lugar
 app.add_middleware(
     CORSMiddleware,
@@ -84,6 +88,11 @@ async def root():
         "health": f"{settings.api_v1_str}/health"
     }
 
+
+@app.get("/metrics", include_in_schema=False)
+async def metrics():
+    """Prometheus metrics endpoint."""
+    return metrics_response()
 
 @app.get("/ping")
 async def ping():

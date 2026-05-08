@@ -48,6 +48,7 @@ nvidia-nvtx-cu12==12.8.90
 packaging==25.0
 pillow==11.3.0
 pluggy==1.6.0
+prometheus_client==0.22.1
 propcache==0.4.0
 pydantic==2.5.0
 pydantic-settings==2.1.0
@@ -81,5 +82,5 @@ uvicorn==0.27.0
 uvloop==0.21.0
 watchfiles==1.1.0
 websockets==15.0.1
+wheel==0.46.3
 yarl==1.21.0
-prometheus-client==0.22.1
